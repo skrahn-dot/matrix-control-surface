@@ -34,7 +34,7 @@ def mem():
 def build():
     with open("/proc/uptime") as f: up = float(f.read().split()[0])
     sessions = [l.split()[0] for l in sh(["zellij", "list-sessions", "--no-formatting"]).splitlines() if l.strip()]
-    mm = "/mnt/matrix-memory"
+    mm = "/mnt/agent-memory"
     return {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "box": {"hostname": os.uname().nodename, "uptime_s": int(up), "ram": mem(),
