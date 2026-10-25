@@ -1,0 +1,11 @@
+[Unit]
+Description=Matrix Control Surface status endpoint (v2, tailnet-bound 100.89.107.88:8787)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/oem/matrix-control-surface/service/status_endpoint.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
