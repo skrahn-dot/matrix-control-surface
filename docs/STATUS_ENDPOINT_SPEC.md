@@ -8,7 +8,7 @@ A tiny HTTP service on the Linux box serving one JSON file: live Matrix status.
 The Sonolumina web app's Dashboard tab fetches it over Tailscale.
 
 ## Architecture
-- status_endpoint.py on the box, bound to Tailscale IP 100.89.107.88:8787
+- status_endpoint.py on the box, bound to the box's Tailscale IP (`tailscale ip -4`, port `:8787`)
 - GET /status returns JSON (box health, services, agents, relay, shared memory)
 - GET / writes a one-line HTML pointer page
 - Snapshot also written to /home/oem/matrix-status.json every 30s (atomic)
@@ -19,7 +19,7 @@ The Sonolumina web app's Dashboard tab fetches it over Tailscale.
 
 ## Implementation notes for Claude Code
 - Python 3 stdlib only (http.server, json, subprocess, time, datetime)
-- Bind 100.89.107.88:8787, fall back to 0.0.0.0:8787 with warning
+- Bind to the Tailscale IP (`STATUS_BIND` or `tailscale ip -4`) on `:8787`; tailnet-only (no `0.0.0.0` fallback)
 - Metrics via: /proc/uptime, free -g, df -BG, tailscale ip -4, systemctl is-active, zellij list-sessions
 - Run inside zellij session named 'status'
 - systemd user service is v2

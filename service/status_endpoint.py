@@ -4,7 +4,7 @@
 import json, os, subprocess, sys, threading, time, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-BIND = os.environ.get("STATUS_BIND", "100.89.107.88")
+BIND = os.environ.get("STATUS_BIND", "")
 PORT = int(os.environ.get("STATUS_PORT", "8787"))
 SNAPSHOT = os.environ.get("STATUS_SNAPSHOT", "/home/oem/matrix-status.json")
 INTERVAL = 30
@@ -147,15 +147,24 @@ if __name__ == "__main__":
     threading.Thread(target=snapshot_loop, daemon=True).start()
     # LAW: tailnet-only. No 0.0.0.0 fallback; retry until the Tailscale IP exists.
     while True:
-        try:
-            srv = ThreadingHTTPServer((BIND, PORT), H)
-            break
-        except OSError as e:
+        bind_host = BIND or (sh(["tailscale", "ip", "-4"]).splitlines() or [""])[0]
+        if not bind_host:
             print(
-                f"bind {BIND}:{PORT} failed ({e}); retrying in 10s",
+                "tailscale ip -4 not available yet; retrying in 10s",
                 file=sys.stderr,
                 flush=True,
             )
             time.sleep(10)
-    print(f"serving on http://{BIND}:{PORT}", flush=True)
+            continue
+        try:
+            srv = ThreadingHTTPServer((bind_host, PORT), H)
+            break
+        except OSError as e:
+            print(
+                f"bind {bind_host}:{PORT} failed ({e}); retrying in 10s",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(10)
+    print(f"serving on http://{bind_host}:{PORT}", flush=True)
     srv.serve_forever()

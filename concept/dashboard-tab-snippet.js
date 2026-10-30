@@ -3,7 +3,7 @@
 // Add: <section id="s-dash" class="tab">...cards container...</section>
 // Wire into existing setTab() pattern (Read / Book / Visual).
 
-const STATUS_URL = "http://100.89.107.88:8787/status";
+const STATUS_URL = ""; // local Matrix only — no hardcoded Tailscale IP
 
 async function loadStatus() {
   try {

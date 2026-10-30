@@ -1,5 +1,5 @@
 [Unit]
-Description=Matrix Control Surface status endpoint (v2, tailnet-bound 100.89.107.88:8787)
+Description=Matrix Control Surface status endpoint (v2, tailnet-bound :8787)
 After=network-online.target
 
 [Service]
