@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Matrix Control Surface — Unified AI Operating System Portal & Status Endpoint (v3.1).
-Stdlib only. Tailnet + loopback bound (:8787), read-only telemetry + unified AI OS UI.
+Stdlib only. Tailnet + loopback bound (:8787). Telemetry and UI are read-only; the one
+write is POST /report, from this machine only (see reports.py).
 """
 
 import datetime
@@ -19,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+import reports
+
 BIND = os.environ.get("STATUS_BIND", "")
 PORT = int(os.environ.get("STATUS_PORT", "8787"))
 SNAPSHOT = os.environ.get("STATUS_SNAPSHOT", "/home/oem/matrix-status.json")
@@ -26,6 +29,10 @@ SONOLUMINA_DIR = Path(os.environ.get("SONOLUMINA_DIR", "/home/oem/sonolumina-rep
 SONOLUMINA_LOOP_DIR = Path("/home/oem/sonolumina-loop").resolve()
 MATRIX_DIR = Path("/home/oem/matrix/src/Cross Coat AI/cross-coat-matrix-master")
 SHARED_MEM_DIR = Path("/mnt/agent-memory/shared-memory")
+REPORTS_FILE = os.environ.get(
+    "STATUS_REPORTS", str(SHARED_MEM_DIR / "artifacts/matrix-status/reports.json")
+)
+PAPERCLIP_URL = "http://127.0.0.1:3100"
 INTERVAL = 30
 STARTED = time.time()
 SELF_PATH = os.path.abspath(__file__)
@@ -434,7 +441,27 @@ def shared_memory_details(mm="/mnt/agent-memory"):
     }
 
 
+def paperclip_issue_counts():
+    """Issues by status across Paperclip companies, or None if it can't be read."""
+    def get(path):
+        with urllib.request.urlopen(PAPERCLIP_URL + path, timeout=1.5) as r:
+            return json.load(r)
+
+    try:
+        counts = {}
+        for company in get("/api/companies"):
+            issues = get(f"/api/companies/{company['id']}/issues")
+            for issue in issues:
+                status = issue.get("status", "unknown")
+                counts[status] = counts.get(status, 0) + 1
+        return counts
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def build():
+    now = time.time()
+    agent_reports = reports.load(REPORTS_FILE)
     with open("/proc/uptime") as f:
         up = float(f.read().split()[0])
     sessions = [
@@ -460,7 +487,6 @@ def build():
     agy_running = has_proc("antigravity")
     paperclip_state = active("paperclipai", user=True)
     keeper_running = has_proc("keeper_dashboard") or has_proc("keeper_worker")
-    openmanus_running = has_proc("OpenManus") or has_proc("run_mcp")
 
     ep_health = {
         "paperclip_3100": probe_port("127.0.0.1", 3100, "/api/health"),
@@ -509,14 +535,8 @@ def build():
             "grokbot": "running" if grok_running else ("ready" if os.path.exists("/home/oem/.grok") else "standby"),
             "antigravity": "running" if agy_running else "online",
         },
-        "agents": {
-            "antigravity_gemini": "online" if agy_running else "ready",
-            "claude_code": "running" if claude_running else "ready",
-            "grokbot": "running" if grok_running else ("ready" if os.path.exists("/home/oem/.grok") else "standby"),
-            "merlin": "active" if paperclip_state == "active" else "ready",
-            "gemini_spark": "ready",
-            "openmanus": "running" if openmanus_running else ("ready" if os.path.exists("/home/oem/OpenManus") else "standby"),
-        },
+        "agents": reports.agent_view(agent_reports, now),
+        "reports": agent_reports,
         "matrix": mat,
         "shared_memory": sm,
         "sonolumina": {
@@ -526,8 +546,8 @@ def build():
             "local_app_url": "/sonolumina/index.html",
             "local_dash_url": "/sonolumina/index.html#s-dash",
         },
-        "relay": {"last_entry": "Stage 6/7 Unified AI OS Portal v3.1 live on :8787", "open_tasks": 0, "needs_seabass": 0},
-        "phase": "Stage 6/7 UNIFIED AI OPERATING SYSTEM — Surface & Synod",
+        "relay": reports.relay_view(agent_reports, paperclip_issue_counts(), now),
+        "phase": "Stage 7 Synod in progress",
         "endpoint": {"version": "v3.1", "uptime_s": int(time.time() - STARTED)},
     }
 
@@ -793,8 +813,8 @@ PORTAL_HTML = """<!doctype html>
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function pillCls(v) {
   const s = String(v ?? '').toLowerCase();
-  if (['active','running','online','ok','mounted','connected','ready','true'].some(k => s.includes(k))) return 'ok';
-  if (['idle','standby','unknown','paused'].some(k => s.includes(k))) return 'warn';
+  if (['active','running','online','ok','mounted','connected','ready','true','working','done'].some(k => s.includes(k))) return 'ok';
+  if (['idle','standby','unknown','paused','silent'].some(k => s.includes(k))) return 'warn';
   return 'err';
 }
 function fmtUp(sec) {
@@ -902,7 +922,9 @@ function render(s) {
     </div>
 
     <div class="card">
-      <h3><span>Synod Agents &amp; Live Ports</span><span class="pill ok">LIVE</span></h3>
+      <h3><span>Synod Agents &amp; Live Ports</span><span class="pill warn">SELF-REPORTED</span></h3>
+      <div class="kv"><span class="k">Needs Seabass</span><span class="v">${esc(s.relay?.needs_seabass)}</span></div>
+      ${(s.relay?.needs_seabass_items || []).map(i => `<div class="kv"><span class="k">Ask</span><span class="v">${esc(i)}</span></div>`).join('')}
       ${Object.entries(ag).map(([k, v]) =>
         `<div class="kv"><span class="k">Agent · ${esc(k)}</span><span class="v"><span class="pill ${pillCls(v)}">${esc(v)}</span></span></div>`
       ).join('')}
@@ -1111,12 +1133,13 @@ def snapshot_loop():
 
 
 class H(BaseHTTPRequestHandler):
+    timeout = 10
+
     def _send(self, code, body, ctype="application/json"):
         b = body if isinstance(body, (bytes, bytearray)) else body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(b)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(b)
@@ -1145,6 +1168,9 @@ class H(BaseHTTPRequestHandler):
         clean_rel = posixpath.normpath("/" + unquote(rel_path)).lstrip("/")
         if not clean_rel or clean_rel == ".":
             clean_rel = "index.html"
+        if any(part.startswith(".") for part in clean_rel.split("/")):
+            self._send(403, json.dumps({"error": "forbidden path"}))
+            return
         # Serve the completed Levels 1-9 Gate 11 read-only if requested
         if clean_rel == "gates/sonolumina_gate11_garden_growth.html":
             loop_gate11 = (SONOLUMINA_LOOP_DIR / clean_rel).resolve()
@@ -1169,7 +1195,40 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, json.dumps({"error": str(e)}))
 
+    def _host_ok(self):
+        ours = (*sh(["tailscale", "ip", "-4"]).split(), socket.gethostname().lower())
+        if reports.host_allowed(self.headers.get("Host"), ours):
+            return True
+        self._send(403, json.dumps({"error": "bad host"}))
+        return False
+
+    def do_POST(self):
+        if not self._host_ok():
+            return
+        if urlparse(self.path).path != "/report":
+            self._send(404, json.dumps({"error": "not found"}))
+            return
+        h = self.headers
+        try:
+            reports.gate(
+                self.client_address[0],
+                h.get("Host"),
+                h.get("Content-Type"),
+                h.get("Origin"),
+                h.get("Content-Length"),
+            )
+            raw = self.rfile.read(int(h["Content-Length"]))
+            record = reports.store(REPORTS_FILE, reports.validate(raw))
+            self._send(201, json.dumps(record))
+        except reports.Refused as e:
+            self.close_connection = True
+            self._send(e.code, json.dumps({"error": e.msg}))
+        except OSError as e:
+            self._send(500, json.dumps({"error": str(e)}))
+
     def do_GET(self):
+        if not self._host_ok():
+            return
         parsed = urlparse(self.path)
         p = parsed.path
         if p == "/status":
