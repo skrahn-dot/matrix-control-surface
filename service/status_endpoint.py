@@ -35,11 +35,6 @@ REPORTS_FILE = os.environ.get(
 PAPERCLIP_URL = "http://127.0.0.1:3100"
 INTERVAL = 30
 STARTED = time.time()
-SELF_PATH = os.path.abspath(__file__)
-try:
-    SELF_MTIME = os.path.getmtime(SELF_PATH)
-except OSError:
-    SELF_MTIME = None
 
 
 def sh(cmd, timeout=5):
@@ -1114,14 +1109,6 @@ def snapshot_loop():
     global _latest
     while True:
         try:
-            if SELF_MTIME is not None:
-                try:
-                    cur_mtime = os.path.getmtime(SELF_PATH)
-                    if cur_mtime != SELF_MTIME:
-                        print("status_endpoint.py updated on disk; hot-reloading via execv", flush=True)
-                        os.execv(sys.executable, [sys.executable, SELF_PATH] + sys.argv[1:])
-                except Exception:
-                    pass
             _latest = build()
             tmp = SNAPSHOT + ".tmp"
             with open(tmp, "w") as f:
